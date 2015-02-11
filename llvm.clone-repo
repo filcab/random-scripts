@@ -1,0 +1,15 @@
+#!/usr/bin/env zsh
+
+repo=$1
+user=filcab
+
+# TODO: Special case clang, whitelist the ones that actually have git repos
+
+(
+git clone http://llvm.org/git/$repo.git &&
+  cd $repo &&
+  git config branch.master.rebase true &&
+  git svn init https://llvm.org/svn/llvm-project/$repo/trunk --username=$user &&
+  git config svn-remote.svn.fetch :refs/remotes/origin/master &&
+  git svn rebase -l
+)

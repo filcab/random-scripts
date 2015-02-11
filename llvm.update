@@ -1,0 +1,43 @@
+#!/usr/bin/env zsh
+
+CHECK=
+case "$1" in
+  check|--check)
+    CHECK=check
+    ;;
+esac
+
+dirs=(. tools/{clang{,/tools/extra},lld,lldb} projects/{libcxx{,abi},compiler-rt})
+svn_dirs=(tools/clang/test/debuginfo-tests)
+
+FAIL=0
+for dir in $dirs; do
+  if [ -z "$CHECK" ]; then
+    (cd $dir && git fetch origin)
+  else
+    echo $dir
+    (cd $dir && git fsck --full)
+    if [[ "$?" -ne 0 ]]; then
+      FAIL=1
+    fi
+  fi
+done
+
+# We're not checking. Rebase everything
+if [ -z "$CHECK" ]; then
+  for dir in $dirs; do
+    (cd $dir && echo $dir &&
+      git checkout master &&
+      git svn rebase -l)
+  done
+fi
+
+for dir in $svn_dirs; do
+  if [ -z "$CHECK" ]; then
+    (cd $dir && echo $dir; pwd; svn update)
+  else
+    (cd $dir && echo $dir; pwd; svn cleanup)
+  fi
+done
+
+exit $FAIL
