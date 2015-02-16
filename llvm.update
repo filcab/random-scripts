@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
+#Verb=echo
+
 CHECK=
 case "$1" in
   check|--check)
@@ -13,10 +15,10 @@ svn_dirs=(tools/clang/test/debuginfo-tests)
 FAIL=0
 for dir in $dirs; do
   if [ -z "$CHECK" ]; then
-    (cd $dir && git fetch origin)
+    (cd $dir && $Verb git fetch origin)
   else
     echo $dir
-    (cd $dir && git fsck --full)
+    (cd $dir && $Verb git fsck --full)
     if [[ "$?" -ne 0 ]]; then
       FAIL=1
     fi
@@ -27,16 +29,16 @@ done
 if [ -z "$CHECK" ]; then
   for dir in $dirs; do
     (cd $dir && echo $dir &&
-      git checkout master &&
-      git svn rebase -l)
+      $Verb git checkout master &&
+      $Verb git svn rebase -l)
   done
 fi
 
 for dir in $svn_dirs; do
   if [ -z "$CHECK" ]; then
-    (cd $dir && echo $dir; pwd; svn update)
+    (cd $dir && echo $dir; pwd; $Verb svn update)
   else
-    (cd $dir && echo $dir; pwd; svn cleanup)
+    (cd $dir && echo $dir; pwd; $Verb svn cleanup)
   fi
 done
 
