@@ -1,0 +1,62 @@
+#!/bin/sh
+
+jobs=10
+verbose=V=1
+#Verb=echo
+makevars=$verbose
+
+makevars=
+# If this has spaces, you're on your own…
+installdir=/usr/local/gitprefix
+envvars="NO_FINK=1 NO_DARWIN_PORTS=1 NO_GETTEXT=1 NO_REGEX=1 prefix=$installdir"
+
+# TODO: Vars for llvm prefix
+asanvars="CC=~/dev/llvm-cmake/bin/clang CFLAGS=-fsanitize=address LDFLAGS=~/dev/llvm-cmake/lib/clang/3.7.0/lib/darwin/libclang_rt.asan_osx_dynamic.dylib"
+
+# This fragile, especially the Perl version
+# Xcode on OS X Yosemite 10.10.2
+perlvar=PERLLIB_EXTRA=/Applications/Xcode.app/Contents/Developer/Library/Perl/5.18/darwin-thread-multi-2level
+
+function die() {
+  echo "[*] " "$@" >&2
+  exit 1
+}
+
+function makeit() {
+  local target=$1
+  shift
+  if [[ "$target" == "so" ]]; then
+    die MAKE IT SO!
+  fi
+
+  $Verb make -j$jobs $makevars $envvars $perlvar $target "$@"
+}
+
+case $1 in
+  clean)
+    makeit clean &&
+    makeit clean -C contrib/credential/osxkeychain &&
+    makeit clean -C contrib/subtree
+    ;;
+  install)
+    $0 build &&
+    makeit install &&
+    echo cp contrib/credential/osxkeychain/git-credential-osxkeychain contrib/contacts/git-contacts contrib/subtree/git-subtree $installdir/bin &&
+    $Verb cp contrib/credential/osxkeychain/git-credential-osxkeychain contrib/contacts/git-contacts contrib/subtree/git-subtree $installdir/bin
+
+    ;;
+  test)
+    # TODO: Make test should also test subtree
+    $0 build &&
+    time makeit test
+    ;;
+  all|build)
+    # TODO: target 'all' should probably be build+test
+    makeit all &&
+    makeit -C contrib/credential/osxkeychain &&
+    makeit -C contrib/subtree
+    ;;
+  *)
+    die "Don't know how to $1. Please use one of:\n\tall, build, clean, test, install\nCalled with: " "$@"
+    ;;
+esac
