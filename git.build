@@ -2,12 +2,16 @@
 
 jobs=10
 verbose=V=1
-#Verb=echo
-makevars=$verbose
+Verb=verb
+#makevars=$verbose
+
+# Contribs to also install
+contribs="credential/osxkeychain/git-credential-osxkeychain contacts/git-contacts git-jump/git-jump subtree/git-subtree"
 
 makevars=
 # If this has spaces, you're on your own…
 installdir=/usr/local/gitprefix
+# envvars tailored for OS X (+ Xcode) out of the box
 envvars="NO_FINK=1 NO_DARWIN_PORTS=1 NO_GETTEXT=1 NO_REGEX=1 prefix=$installdir"
 
 # TODO: Vars for llvm prefix
@@ -20,6 +24,11 @@ perlvar=PERLLIB_EXTRA=/Applications/Xcode.app/Contents/Developer/Library/Perl/5.
 function die() {
   echo "[*] " "$@" >&2
   exit 1
+}
+
+function verb() {
+  echo "[-]" "$@"
+  "$@"
 }
 
 function makeit() {
@@ -38,24 +47,28 @@ case $1 in
     makeit clean -C contrib/credential/osxkeychain &&
     makeit clean -C contrib/subtree
     ;;
+
   install)
     $0 build &&
     makeit install &&
-    echo cp contrib/credential/osxkeychain/git-credential-osxkeychain contrib/contacts/git-contacts contrib/subtree/git-subtree $installdir/bin &&
-    $Verb cp contrib/credential/osxkeychain/git-credential-osxkeychain contrib/contacts/git-contacts contrib/subtree/git-subtree $installdir/bin
-
+    for util in $contribs; do
+      $Verb cp contrib/$util $installdir/bin
+    done
     ;;
+
   test)
     # TODO: Make test should also test subtree
     $0 build &&
     time makeit test
     ;;
+
   all|build)
     # TODO: target 'all' should probably be build+test
     makeit all &&
     makeit -C contrib/credential/osxkeychain &&
     makeit -C contrib/subtree
     ;;
+
   *)
     die "Don't know how to $1. Please use one of:\n\tall, build, clean, test, install\nCalled with: " "$@"
     ;;
