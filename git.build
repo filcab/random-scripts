@@ -5,8 +5,13 @@ verbose=V=1
 Verb=verb
 #makevars=$verbose
 
-# Contribs to also install
+# Contribs to also install (Need to build/install manually, for now)
+# Directories inside contribs/
 contribs="credential/osxkeychain/git-credential-osxkeychain contacts/git-contacts git-jump/git-jump subtree/git-subtree"
+contribs_make_install="contacts subtree"
+contribs_make_manual_install="credential/osxkeychain/git-credential-osxkeychain"
+# Actual files for manual install
+contribs_manual="git-jump/git-jump"
 
 makevars=
 # If this has spaces, you're on your own…
@@ -44,6 +49,7 @@ function makeit() {
 case $1 in
   clean)
     makeit clean &&
+    makeit clean -C contrib/contacts &&
     makeit clean -C contrib/credential/osxkeychain &&
     makeit clean -C contrib/subtree
     ;;
@@ -51,7 +57,10 @@ case $1 in
   install)
     $0 build &&
     makeit install &&
+    makeit clean -C contrib/contacts &&
+    makeit clean -C contrib/subtree
     for util in $contribs; do
+      # FIXME: This is repeating install for subtree and contacts.
       $Verb cp contrib/$util $installdir/bin
     done
     ;;
@@ -65,6 +74,7 @@ case $1 in
   all|build)
     # TODO: target 'all' should probably be build+test
     makeit all &&
+    makeit -C contrib/contacts &&
     makeit -C contrib/credential/osxkeychain &&
     makeit -C contrib/subtree
     ;;
