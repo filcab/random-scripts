@@ -14,6 +14,7 @@ svn_dirs=(tools/clang/test/debuginfo-tests)
 
 FAIL=0
 for dir in $dirs; do
+  [ -d $dir ] || continue
   if [ -z "$CHECK" ]; then
     (cd $dir && $Verb git fetch origin)
   else
@@ -28,6 +29,8 @@ done
 # We're not checking. Rebase everything
 if [ -z "$CHECK" ]; then
   for dir in $dirs; do
+    [ -d $dir ] || continue
+
     (cd $dir && echo $dir &&
       $Verb git checkout master &&
       $Verb git svn rebase -l)
@@ -35,6 +38,7 @@ if [ -z "$CHECK" ]; then
 fi
 
 for dir in $svn_dirs; do
+  [ -d $dir ] || continue
   if [ -z "$CHECK" ]; then
     (cd $dir && echo $dir; pwd; $Verb svn update)
   else
