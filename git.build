@@ -58,8 +58,6 @@ case $1 in
   install)
     $0 build &&
     makeit install &&
-    makeit clean -C contrib/contacts &&
-    makeit clean -C contrib/subtree
     for util in $contribs; do
       # FIXME: This is repeating install for subtree and contacts.
       $Verb cp contrib/$util $installdir/bin
