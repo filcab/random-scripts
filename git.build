@@ -49,9 +49,10 @@ function makeit() {
 case $1 in
   clean)
     makeit clean &&
-    makeit clean -C contrib/contacts &&
     makeit clean -C contrib/credential/osxkeychain &&
     makeit clean -C contrib/subtree
+    # lolwtf? git-contacts' make clean will remove itself. Don't run it!
+    #makeit clean -C contrib/contacts &&
     ;;
 
   install)
