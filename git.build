@@ -17,13 +17,13 @@ makevars=
 # If this has spaces, you're on your own…
 installdir=/usr/local/gitprefix
 # envvars tailored for OS X (+ Xcode) out of the box
-envvars="NO_FINK=1 NO_DARWIN_PORTS=1 NO_GETTEXT=1 NO_REGEX=1 prefix=$installdir"
+envvars="NO_FINK=YesPlease NO_DARWIN_PORTS=YesPlease NO_GETTEXT=YesPlease NO_REGEX=YesPlease prefix=$installdir"
 
 # TODO: Vars for llvm prefix
 asanvars="CC=~/dev/llvm-cmake/bin/clang CFLAGS=-fsanitize=address LDFLAGS=~/dev/llvm-cmake/lib/clang/3.7.0/lib/darwin/libclang_rt.asan_osx_dynamic.dylib"
 
 # This fragile, especially the Perl version
-# Xcode on OS X Yosemite 10.10.2
+# Xcode 6.3.2 on OS X Yosemite 10.10.3
 perlvar=PERLLIB_EXTRA=/Applications/Xcode.app/Contents/Developer/Library/Perl/5.18/darwin-thread-multi-2level
 
 function die() {
