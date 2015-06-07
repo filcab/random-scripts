@@ -1,0 +1,150 @@
+#!/bin/bash
+
+# FIXME: Make this reliable with paths with spaces
+
+call_ninja=No
+build_dir=$PWD/build
+src_dir=$PWD/llvm
+targets="AArch64;ARM;X86"
+build_type=Release
+
+cmake_flags="-DLIBCXXABI_LIBCXX_PATH=~/dev/llvm/libcxx -DLIBCXXABI_LIBCXX_INCLUDES=~/dev/llvm/libcxx/include"
+verbose=No
+
+llvm_projects="libcxxabi libcxx compiler-rt dragonegg" # maybe add libunwind, but __cxxabi_config.h is "hard to find"
+llvm_tools="polly clang llgo lld lldb"
+
+function log() {
+  echo "[*]" "$@"
+}
+
+function error() {
+  echo "[!] Error:" "$@"
+}
+
+function usage() {
+  echo "usage:"
+  echo "  $0 [options] [cmake args ...]"
+  echo "Creates dst-dir (it can't exist), then calls cmake in it, with cmake args..."
+  echo "Options:"
+  echo "-type type        Type of build: Release|Debug|... Default: Release"
+  echo "-targets t1;t2... Set targets to build. Default: $targets"
+  echo "-dst dst-dir      Uses dst-dir as build directory, instead of \$PWD/build"
+  echo "-src src-dir      Uses src-dir as source directory, instead of \$PWD/llvm"
+  echo "-ninja            Call ninja (no arguments) if cmake finished successfully"
+  echo "-verbose          Be verbose"
+}
+
+function run_cmake() {
+  log "Running cmake"
+  if [ "$verbose" == "Yes" ]; then
+    log cmake "$@"
+  fi
+  cmake "$@"
+}
+
+function check_arg() {
+  if (( $2 < 1 )); then
+    error "$1 option needs an argument"
+    exit 1
+  fi
+}
+
+while (( $# > 0 ));
+do
+  arg=$1
+  shift
+
+  case $arg in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -v|-verbose|--verbose)
+      verbose=Yes
+      ;;
+    -ninja)
+      call_ninja=Yes
+      ;;
+    -t|-targets|--targets)
+      check_arg "$arg" $#
+      targets="$1"
+      shift
+      ;;
+    -b|-build-type|--build-type)
+      check_arg "$arg" $#
+      build_type=$1
+      shift
+      ;;
+    -s|-src|--src)
+      check_arg "$arg" $#
+      src_dir=$1
+      shift
+      ;;
+    -d|-dst|--dst)
+      check_arg "$arg" $#
+      build_dir=$1
+      shift
+      ;;
+    *)
+      # Unknown arguments will be passed to cmake
+      break
+      ;;
+  esac
+done
+
+if [ "$verbose" == "Yes" ]; then
+  log "call ninja: $call_ninja"
+  log "targets: $targets"
+  log "build type: $build_type"
+  log "source dir: $src_dir"
+  log "build dir:  $build_dir"
+fi
+
+impl_cmake_flags="-DCMAKE_BUILD_TYPE=$build_type -DLLVM_TARGETS_TO_BUILD=$targets"
+# By default, disable lldb
+impl_cmake_flags+=" -DLLVM_EXTERNAL_LLDB_BUILD=NO"
+
+# Check for projects/tools at the directory above src-dir or the usual places
+# src-dir can be the llvm source directory or the directory containing
+# llvm, clang, etc
+for proj in $llvm_tools $llvm_projects; do
+  Proj=`printf "%-11s" $proj`
+  if [ -d "$src_dir/$proj" ]; then
+    log "$Proj -> $src_dir/$proj"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/$proj"
+  elif [ -d "$src_dir/tools/$proj" ]; then
+    log "$Proj -> $src_dir/$proj"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/$proj"
+  elif [ -d "$src_dir/projects/$proj" ]; then
+    log "$Proj -> $src_dir/$proj"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/$proj"
+  elif [ -d "$src_dir/../$proj" ]; then
+    log "$Proj -> $src_dir/../$proj"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/../$proj"
+  fi
+  # Make sure the output is aligned
+done
+
+if [ "$verbose" == "Yes" ]; then
+  log "user cmake flags: $cmake_flags"
+  log "additional cmake flags: $impl_cmake_flags"
+fi
+
+if [ -e "$build_dir" ]; then
+  error "$build_dir already exists! (Re)move it or pick another name." >&2
+  exit 1
+fi
+
+mkdir -p "$build_dir" &&
+  cd "$build_dir" &&
+  run_cmake -G Ninja "$src_dir" $cmake_flags $impl_cmake_flags "$@"
+
+ret=$?
+if (( $ret != 0 )); then
+  exit $ret
+fi
+
+if [ "$call_ninja" == "Yes" ]; then
+  exec ninja
+fi
