@@ -9,12 +9,22 @@ case "$1" in
     ;;
 esac
 
+# For now, projects and tools will only be updated if they're in git and
+# at the CWD.
+projects=(libcxxabi libcxx libunwind compiler-rt dragonegg)
+tools=(polly clang llgo lld lldb)
+
 dirs=(. tools/{clang{,/tools/extra},lld,lldb} projects/{libcxx{,abi},compiler-rt})
 svn_dirs=(tools/clang/test/debuginfo-tests)
 
 FAIL=0
-for dir in $dirs; do
+# llvm is not in projects nor tools. Add it to our list of dirs
+for dir in ${dirs[@]} llvm ${projects[@]} ${tools[@]}; do
   [ -d $dir ] || continue
+  # Skip . if we're on a dir with all llvm projects/tools' directories
+  if [[ "." == $dir ]] && [ ! -d ".git" ]; then
+    continue
+  fi
   if [ -z "$CHECK" ]; then
     (cd $dir && $Verb git fetch origin)
   else
@@ -28,8 +38,12 @@ done
 
 # We're not checking. Rebase everything
 if [ -z "$CHECK" ]; then
-  for dir in $dirs; do
+  for dir in ${dirs[@]} llvm ${projects[@]} ${tools[@]}; do
     [ -d $dir ] || continue
+    # Skip . if we're on a dir with all llvm projects/tools' directories
+    if [[ "." == $dir ]] && [ ! -d ".git" ]; then
+      continue
+    fi
 
     (cd $dir && echo $dir &&
       $Verb git checkout master &&
