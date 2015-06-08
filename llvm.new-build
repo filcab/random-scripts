@@ -86,6 +86,11 @@ do
       build_dir=$1
       shift
       ;;
+    -*)
+      error "Unknown argument: $arg"
+      log "Remaining command line arguments:" "$@"
+      exit 1
+      ;;
     *)
       # Unknown arguments will be passed to cmake
       break
