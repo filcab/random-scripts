@@ -136,7 +136,7 @@ for proj in $llvm_tools $llvm_projects; do
 done
 
 if [ "$verbose" == "Yes" ]; then
-  log "user cmake flags: $cmake_flags"
+  log "user cmake flags: $cmake_flags" "$@"
   log "additional cmake flags: $impl_cmake_flags"
 fi
 
