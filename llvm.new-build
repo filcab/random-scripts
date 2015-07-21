@@ -112,7 +112,7 @@ fi
 
 impl_cmake_flags="-DCMAKE_BUILD_TYPE=$build_type -DLLVM_TARGETS_TO_BUILD=$targets"
 # By default, disable lldb
-impl_cmake_flags+=" -DLLVM_EXTERNAL_LLDB_BUILD=NO"
+impl_cmake_flags+=" -DLLVM_TOOL_LLDB_BUILD=NO"
 
 # Check for projects/tools at the directory above src-dir or the usual places
 # src-dir can be the llvm source directory or the directory containing
