@@ -7,11 +7,7 @@ Verb=verb
 
 # Contribs to also install (Need to build/install manually, for now)
 # Directories inside contribs/
-contribs="credential/osxkeychain/git-credential-osxkeychain contacts/git-contacts git-jump/git-jump subtree/git-subtree"
-contribs_make_install="contacts subtree"
-contribs_make_manual_install="credential/osxkeychain/git-credential-osxkeychain"
-# Actual files for manual install
-contribs_manual="git-jump/git-jump"
+contribs="credential/osxkeychain/git-credential-osxkeychain contacts/git-contacts git-jump/git-jump subtree/git-subtree workdir/git-new-workdir"
 
 makevars=
 # If this has spaces, you're on your own…
