@@ -157,6 +157,7 @@ if [ -e "$build_dir" ]; then
   exit 1
 fi
 
+log "mkdir -p $build_dir"
 mkdir -p "$build_dir" &&
   cd "$build_dir" &&
   run_cmake -G Ninja "$src_dir" $cmake_flags $impl_cmake_flags "$@"
