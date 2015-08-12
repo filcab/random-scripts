@@ -27,7 +27,7 @@ function usage() {
   echo "  $0 [options] [cmake args ...]"
   echo "Creates dst-dir (it can't exist), then calls cmake in it, with cmake args..."
   echo "Options:"
-  echo "-type type        Type of build: Release|Debug|... Default: Release"
+  echo "-build-type type  Type of build: Release|Debug|... Default: Release"
   echo "-targets t1;t2... Set targets to build. Default: $targets"
   echo "-dst dst-dir      Uses dst-dir as build directory, instead of \$PWD/build"
   echo "-src src-dir      Uses src-dir as source directory, instead of \$PWD/llvm"
@@ -56,7 +56,7 @@ do
   shift
 
   case $arg in
-    -h|--help)
+    -h|-help|--help)
       usage
       exit 0
       ;;
@@ -71,7 +71,7 @@ do
       targets="$1"
       shift
       ;;
-    -b|-build-type|--build-type)
+    -b|-build-type|--build-type|-type)
       check_arg "$arg" $#
       build_type=$1
       shift
