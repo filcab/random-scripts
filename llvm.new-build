@@ -50,6 +50,14 @@ function check_arg() {
   fi
 }
 
+realpath() {
+  if [[ $1 = /* ]]; then
+    echo "$1"
+  else
+    echo "$PWD/${1#./}"
+  fi
+}
+
 while (( $# > 0 ));
 do
   arg=$1
@@ -78,7 +86,11 @@ do
       ;;
     -s|-src|--src)
       check_arg "$arg" $#
-      src_dir=$1
+      src_dir=$(realpath "$1")
+      if [ ! -d "$src_dir" ]; then
+        error "Source directory \`$src_dir' doesn't exist!"
+        exit 1
+      fi;
       shift
       ;;
     -d|-dst|--dst)
