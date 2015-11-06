@@ -16,7 +16,7 @@ installdir=/usr/local/gitprefix
 envvars="NO_FINK=YesPlease NO_DARWIN_PORTS=YesPlease NO_GETTEXT=YesPlease NO_REGEX=YesPlease prefix=$installdir"
 # Apple's CC_SHA1_Update takes a uint32_t as a size parameter, which
 # breaks on >= 4GB files.
-envvars="$envvars BLK_SHA=YesPlease"
+envvars="$envvars BLK_SHA1=YesPlease"
 
 # TODO: Vars for llvm prefix
 asanvars="CC=~/dev/llvm-cmake/bin/clang CFLAGS=-fsanitize=address LDFLAGS=~/dev/llvm-cmake/lib/clang/3.7.0/lib/darwin/libclang_rt.asan_osx_dynamic.dylib"
