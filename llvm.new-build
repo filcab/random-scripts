@@ -132,17 +132,21 @@ impl_cmake_flags+=" -DLLVM_TOOL_LLDB_BUILD=NO -DLLVM_BUILD_EXTERNAL_COMPILER_RT=
 for proj in $llvm_tools $llvm_projects; do
   Proj=`printf "%-11s" $proj`
   if [ -d "$src_dir/$proj" ]; then
-    log "$Proj -> $src_dir/$proj"
-    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/$proj"
+    d="$src_dir/$proj"
+    log "$Proj -> $d"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$d"
   elif [ -d "$src_dir/tools/$proj" ]; then
-    log "$Proj -> $src_dir/$proj"
-    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/$proj"
+    d="$src_dir/tools/$proj"
+    log "$Proj -> $d"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$d"
   elif [ -d "$src_dir/projects/$proj" ]; then
-    log "$Proj -> $src_dir/$proj"
-    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/$proj"
+    d="$src_dir/projects/$proj"
+    log "$Proj -> $d"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$d"
   elif [ -d "$src_dir/../$proj" ]; then
-    log "$Proj -> $src_dir/../$proj"
-    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$src_dir/../$proj"
+    d="$src_dir/../$proj"
+    log "$Proj -> $d"
+    impl_cmake_flags+=" -DLLVM_EXTERNAL_$(echo $proj | tr [:lower:]- [:upper:]_)_SOURCE_DIR=$d"
   fi
   # Make sure the output is aligned
 done
