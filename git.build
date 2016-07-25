@@ -1,6 +1,6 @@
 #!/bin/sh
 
-jobs=10
+jobs=$(sysctl hw.ncpu | awk '{ print $2; }')
 verbose=V=1
 Verb=verb
 #makevars=$verbose
