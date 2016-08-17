@@ -11,7 +11,7 @@ esac
 
 # For now, projects and tools will only be updated if they're in git and
 # at the CWD.
-projects=(libcxxabi libcxx libunwind compiler-rt dragonegg)
+projects=(libcxxabi libcxx libunwind compiler-rt dragonegg clang-tools-extra)
 tools=(polly clang llgo lld lldb)
 
 dirs=(. tools/{clang{,/tools/extra},lld,lldb} projects/{libcxx{,abi},compiler-rt})
