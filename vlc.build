@@ -1,0 +1,86 @@
+#!/bin/bash
+
+core_count=`sysctl -n machdep.cpu.core_count`
+MAKE_JOBS=$(( core_count + 1 ))
+OSX_VER=$(sw_vers | grep ProductVersion | awk '{print $2;}' | awk -F. '{print $1 "." $2;}')
+DARWIN_VER=$(uname -r)
+DEFAULT_ARCH=x86_64
+TRIPLE=$DEFAULT_ARCH-apple-darwin$DARWIN_VER
+
+# Stop on first error
+set -e
+# Stop if any command in a pipeline fails
+set -o pipefail
+
+# Following https://wiki.videolan.org/OSXCompile
+
+# Do this first, as we might need some utilities from bootstrap to build parts
+# of bootstrap (autopoint from gettext)
+# Unsure if we need to add both to the PATH here
+export PATH=$PWD/extras/tools/build/bin:$PATH
+export PATH=$PWD/contrib/$TRIPLE/bin:$PATH
+export OSX_VERSION=$OSX_VER
+
+case $1 in
+  --bootstrap|bootstrap)
+    pushd extras/tools
+    $Verb ./bootstrap && make -j$MAKE_JOBS
+    popd # extras/tools
+  ;;
+esac
+
+pushd contrib
+mkdir -p contrib-osx
+
+pushd contrib-osx
+
+case $1 in
+  --bootstrap|bootstrap)
+    ../bootstrap --host=$TRIPLE --build=$TRIPLE
+  ;;
+esac
+
+# Special. Needed by a bunch of other contrib packages
+make .gettext
+
+### Contribs by category
+# Pictures
+make -j$MAKE_JOBS .SDL_image .jpeg .openjpeg .tiff
+
+# Audio
+make -j$MAKE_JOBS .a52 .dca .faad2 .flac .fluid .gme .gsm .lame .mad .modplug .mpcdec .ogg .opus .samplerate .sidplay2 .speex .speexdsp .twolame .vorbis .vorbisenc
+
+# Video
+make -j$MAKE_JOBS .ffmpeg .goom .libmpeg2 .mpg123 .schroedinger .theora .vncclient .vpx .zvbi
+
+# Information/containters
+make -j$MAKE_JOBS .aribb24 .ebml .kate .libarchive .live555 .matroska .taglib
+
+# Sources
+make -j$MAKE_JOBS .dvbpsi .dvdcss .dvdnav .dvdread .nfs
+#make -j$MAKE_JOBS .bluray
+
+# Outputs
+make -j$MAKE_JOBS .shout #.tiger
+
+# UI
+make -j$MAKE_JOBS .bghudappkit .ncurses
+
+# Misc utilities
+make -j$MAKE_JOBS .gcrypt .lua
+make -j$MAKE_JOBS .luac
+make -j$MAKE_JOBS .cddb .ffi .gcrypt .gnutls .gpg-error .lua .luac .microdns .protobuf .sparkle .ssh2 .upnp
+make -j$MAKE_JOBS .growl
+
+popd #contrib-osx
+popd # contrib
+
+case $1 in
+  --bootstrap|bootstrap)
+    ./bootstrap
+  ;;
+esac
+
+mkdir -p build && cd build
+../extras/package/macosx/configure.sh --enable-debug --host=x86_64-apple-darwin15 --build=x86_64-apple-darwin15 --with-macosx-sdk=`xcrun --show-sdk-path` --with-macosx-version-min=$OSX_VERSION --enable-macosx
+time make -j$MAKE_JOBS
