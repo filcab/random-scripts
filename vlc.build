@@ -7,6 +7,10 @@ DARWIN_VER=$(uname -r)
 DEFAULT_ARCH=x86_64
 TRIPLE=$DEFAULT_ARCH-apple-darwin$DARWIN_VER
 
+my_flags="-mavx"
+export CFLAGS="$my_flags $CFLAGS"
+export CXXFLAGS="$my_flags $CXXFLAGS"
+
 # Stop on first error
 set -e
 # Stop if any command in a pipeline fails
