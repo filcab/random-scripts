@@ -26,10 +26,10 @@ for dir in ${dirs[@]} llvm ${projects[@]} ${tools[@]}; do
     continue
   fi
   if [ -z "$CHECK" ]; then
-    (cd $dir && $Verb git fetch origin)
+    $Verb git -C $dir fetch origin
   else
     echo $dir
-    (cd $dir && $Verb git fsck --full)
+    $Verb git -C $dir fsck --full
     if [[ "$?" -ne 0 ]]; then
       FAIL=1
     fi
@@ -45,9 +45,9 @@ if [ -z "$CHECK" ]; then
       continue
     fi
 
-    (cd $dir && echo $dir &&
-      $Verb git checkout master &&
-      $Verb git svn rebase -l)
+    (echo $dir &&
+      $Verb git -C $dir checkout master &&
+      $Verb git -C $dir svn rebase -l)
   done
 fi
 
