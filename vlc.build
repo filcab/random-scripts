@@ -27,6 +27,7 @@ export OSX_VERSION=$OSX_VER
 
 case $1 in
   --bootstrap|bootstrap)
+    ./bootstrap
     pushd extras/tools
     $Verb ./bootstrap && make -j$MAKE_JOBS
     popd # extras/tools
@@ -68,22 +69,16 @@ make -j$MAKE_JOBS .dvbpsi .dvdcss .dvdnav .dvdread .nfs
 make -j$MAKE_JOBS .shout #.tiger
 
 # UI
-make -j$MAKE_JOBS .bghudappkit .ncurses
+make -j$MAKE_JOBS .ncurses
 
 # Misc utilities
 make -j$MAKE_JOBS .gcrypt .lua
 make -j$MAKE_JOBS .luac
 make -j$MAKE_JOBS .cddb .ffi .gcrypt .gnutls .gpg-error .lua .luac .microdns .protobuf .sparkle .ssh2 .upnp
-make -j$MAKE_JOBS .growl
+make -j$MAKE_JOBS .growl .breakpad
 
 popd #contrib-osx
 popd # contrib
-
-case $1 in
-  --bootstrap|bootstrap)
-    ./bootstrap
-  ;;
-esac
 
 mkdir -p build && cd build
 ../extras/package/macosx/configure.sh --enable-debug --host=x86_64-apple-darwin15 --build=x86_64-apple-darwin15 --with-macosx-sdk=`xcrun --show-sdk-path` --with-macosx-version-min=$OSX_VERSION --enable-macosx
