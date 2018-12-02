@@ -63,7 +63,7 @@ make -j$MAKE_JOBS .aribb24 .ebml .kate .libarchive .live555 .matroska .taglib
 
 # Sources
 make -j$MAKE_JOBS .dvbpsi .dvdcss .dvdnav .dvdread .nfs
-#make -j$MAKE_JOBS .bluray
+#make -j$MAKE_JOBS .bluray  # Needs java, iirc
 
 # Outputs
 make -j$MAKE_JOBS .shout #.tiger
@@ -75,7 +75,7 @@ make -j$MAKE_JOBS .ncurses
 make -j$MAKE_JOBS .gcrypt .lua
 make -j$MAKE_JOBS .luac
 make -j$MAKE_JOBS .cddb .ffi .gcrypt .gnutls .gpg-error .lua .luac .microdns .protobuf .sparkle .ssh2 .upnp
-make -j$MAKE_JOBS .growl .breakpad
+make -j$MAKE_JOBS .breakpad
 
 popd #contrib-osx
 popd # contrib
