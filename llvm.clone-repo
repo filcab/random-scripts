@@ -33,7 +33,7 @@ user=filcab
 # TODO: Special case clang, whitelist the ones that actually have git repos
 
 (
-  $verb git clone http://llvm.org/git/$repo.git &&
+  $verb git clone https://git.llvm.org/git/$repo.git &&
   $verb cd $repo &&
   $verb git config branch.master.rebase true &&
   $verb git svn init https://llvm.org/svn/llvm-project/$svn_repo/trunk --username=$user &&
