@@ -12,7 +12,7 @@ cmake_flags="-DLIBCXXABI_LIBCXX_PATH=~/dev/llvm/libcxx -DLIBCXXABI_LIBCXX_INCLUD
 verbose=No
 
 llvm_projects="libcxxabi libcxx compiler-rt dragonegg" # maybe add libunwind, but __cxxabi_config.h is "hard to find"
-llvm_tools="polly clang llgo lld lldb"
+llvm_tools="polly clang llgo lld lldb clang-tools-extra"
 
 function log() {
   echo "[*]" "$@"
