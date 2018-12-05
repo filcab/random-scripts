@@ -8,7 +8,7 @@ src_dir=$PWD/llvm
 targets="AArch64;ARM;X86"
 build_type=Release
 
-cmake_flags="-DLIBCXXABI_LIBCXX_PATH=~/dev/llvm/libcxx -DLIBCXXABI_LIBCXX_INCLUDES=~/dev/llvm/libcxx/include"
+cmake_flags="-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
 verbose=No
 
 llvm_projects="libcxxabi libcxx compiler-rt dragonegg" # maybe add libunwind, but __cxxabi_config.h is "hard to find"
@@ -124,7 +124,7 @@ fi
 
 impl_cmake_flags="-DCMAKE_BUILD_TYPE=$build_type -DLLVM_TARGETS_TO_BUILD=$targets"
 # By default, disable lldb
-impl_cmake_flags+=" -DLLVM_TOOL_LLDB_BUILD=NO -DLLVM_BUILD_EXTERNAL_COMPILER_RT=ON -DLLVM_BUILD_TESTS:BOOL=ON -DLLVM_ENABLE_LIBCXX:BOOL=ON"
+impl_cmake_flags+=" -DLLVM_TOOL_LLDB_BUILD=OFF -DLLVM_BUILD_EXTERNAL_COMPILER_RT=ON -DLLVM_BUILD_TESTS:BOOL=ON -DLLVM_ENABLE_LIBCXX:BOOL=ON"
 
 # Check for projects/tools at the directory above src-dir or the usual places
 # src-dir can be the llvm source directory or the directory containing
