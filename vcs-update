@@ -331,7 +331,6 @@ def main():
     else:
         top_dir = os.getcwd()
 
-    # TODO: Provide dir from CLI
     info('Updating from {} at a maxdepth of {}'.format(top_dir, LEVELS_TO_SEARCH))
 
     q = queue_impl()
