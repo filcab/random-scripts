@@ -1,0 +1,767 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+from functools import reduce
+import os
+import subprocess
+import sys
+import threading
+import traceback
+import textwrap
+
+try:
+    import Queue as queue
+except ImportError:
+    import queue
+
+#import pdb
+#from pprint import pprint
+
+
+# TODO: Make this configurable via args and maybe config files (blacklist, fetch-only). Levels of dirs to descend
+LEVELS_TO_SEARCH = 7
+THREADS = 8
+DRY_RUN = False
+blacklist = []
+fetch_only = []
+# Priorities for our task queue. We need to guarantee that we don't get the threads to exit before everything is done
+VERY_LOW_PRIORITY = 1024
+REGULAR_PRIORITY = 0
+
+scriptname = 'vcs-update' # FIXME: Use actual name
+DEBUG_LEVEL = 0
+
+
+# Have a few heuristics for winpty.
+# A look at `env` vs `winpty env` showed winpty with TERM=cygwin (straight from MinTTY for git-bash we had xterm-256color) and winpty adding the .exe to SHELL
+# TERM might be set late
+looks_like_winpty = False
+if sys.platform == 'win32' and ('TERM' not in os.environ or os.environ['TERM'] == 'cygwin') and ('SHELL' in os.environ and os.environ['SHELL'].endswith('.exe')):
+    looks_like_winpty = True
+    # From https://stackoverflow.com/questions/36760127/how-to-use-the-new-support-for-ansi-escape-sequences-in-the-windows-10-console
+    # Went with the shorter amount of code, as this doesn't need to be foolproof
+    import ctypes
+    def enable_console_ansi_escapes():
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    enable_console_ansi_escapes()
+else:
+    def enable_console_ansi_escapes():
+        pass
+
+
+def stdout_looks_like_tty():
+    return sys.stdout.isatty() and (sys.platform != 'win32' or looks_like_winpty)
+
+
+print_lock = threading.Lock()
+def locked_print(*args, **kwargs):
+    with print_lock:
+        print(*args, **kwargs)
+def debug(n, *args, start='[D]', **kwargs):
+    if DEBUG_LEVEL < n:
+        return
+    locked_print(start, *args, file=sys.stderr, **kwargs)
+def info(*args, start='[*]', **kwargs):
+    locked_print(start, *args, file=sys.stderr, **kwargs)
+def warn(*args, start='[W]', **kwargs):
+    locked_print(start, *args, file=sys.stderr, **kwargs)
+def error(*args, **kwargs):
+    start = Colors.error(kwargs.pop('start', '[E]'))
+    locked_print(start, *args, file=sys.stderr, **kwargs)
+
+
+class TextUI(object):
+    def __init__(self):
+        pass
+
+    def debug(self, *args, **kwargs):
+        debug(*args, **kwargs)
+
+    def info(self, *args, **kwargs):
+        info(*args, **kwargs)
+
+    def warn(self, *args, **kwargs):
+        warn(*args, **kwargs)
+
+    def error(self, *args, **kwargs):
+        error(*args, **kwargs)
+# TODO: Consolidate calls to display functions. Add higher-level API.
+# TODO: Write ConsoleUI
+ui = TextUI()
+
+
+class Colors(object):
+    if sys.stdout.isatty() and (sys.platform != 'win32' or looks_like_winpty):
+        ui.debug(1, 'Using colors')
+        RESET = '\033[0;0m'
+        OK = '\033[1;32m'
+        ERROR = '\033[1;31m'
+        VCS = '\033[1;36m'
+        UPDATING = '\033[1;34m'
+        UPDATED = '\033[1;32m'
+        SKIPPING = '\033[1;33m'
+        BLACKLISTED = '\033[1;31m'
+        # For remaining status
+        QUEUED = '\033[1;33m'
+        DEPENDENT = '\033[1;34m'
+    else:
+        ui.debug(1, 'Not using colors. isatty(): {}, looks_like_winpty: {}'.format(sys.stdout.isatty(), looks_like_winpty))
+        RESET = ''
+        OK = ''
+        ERROR = ''
+        VCS = ''
+        UPDATING = ''
+        UPDATED = ''
+        SKIPPING = ''
+        BLACKLISTED = ''
+        QUEUED = ''
+        DEPENDENT = ''
+
+    @classmethod
+    def ok(c, thing):
+        return '{}{}{}'.format(c.OK, thing, c.RESET)
+
+    @classmethod
+    def error(c, thing):
+        return '{}{}{}'.format(c.ERROR, thing, c.RESET)
+
+    @classmethod
+    def updating(c, thing='Updating'):
+        return '{}{}{}'.format(c.UPDATING, thing, c.RESET)
+
+    @classmethod
+    def updated(c, thing='Updated'):
+        return '{}{}{}'.format(c.UPDATED, thing, c.RESET)
+
+    @classmethod
+    def skipping(c, thing='Skipping'):
+        return '{}{}{}'.format(c.SKIPPING, thing, c.RESET)
+
+    @classmethod
+    def blacklisted(c, thing='blacklisted'):
+        return '{}{}{}'.format(c.BLACKLISTED, thing, c.RESET)
+
+    @classmethod
+    def vcs(c, vcs):
+        return '{}{}{}'.format(c.VCS, vcs, c.RESET)
+
+
+class DirStatus(object):
+    class Status(object):
+        QUEUED = 'Queued'
+        DEPENDENT = 'Dependent'
+        UPDATING = 'Updating'
+        UPDATED = 'Updated'
+        ERROR = 'Error'
+        COLOR_FOR_STATE = {
+                QUEUED: Colors.QUEUED,
+                DEPENDENT: Colors.DEPENDENT,
+                UPDATING: Colors.UPDATING,
+                UPDATED: Colors.UPDATED,
+                ERROR: Colors.ERROR,
+                }
+        def __init__(self):
+            self.status = self.QUEUED
+            self.deps = []
+
+        def __str__(self):
+            return 'Status({}, {})'.format(self.__colorize(self.status), self.deps)
+
+        def __colorize(self, status):
+            return '{}{}{}'.format(self.COLOR_FOR_STATE[status], status, Colors.RESET)
+
+        def is_queued(self):
+            return self.status == self.QUEUED
+
+        def is_updating(self):
+            return self.status == self.UPDATING
+
+        def is_updated(self):
+            return self.status == self.UPDATED
+
+        def is_dependent(self):
+            return self.status == self.DEPENDENT
+
+        def updating(self):
+            assert self.is_queued()
+            self.status = self.UPDATING
+
+        def dependent(self):
+            assert self.is_updating()
+            self.status = self.DEPENDENT
+
+        def updated(self, dir_status):
+            assert self.is_updating()
+            self.status = self.UPDATED
+            # Update all dependents on this task
+            for d in self.deps:
+                # Let's keep in in self.deps so we can more easily debug problems
+                dir_status.queued(d.d)
+                task_q.put((REGULAR_PRIORITY, d))
+
+        def add_dep(self, dep, task):
+            assert self.is_updating()
+            self.deps.append(task)
+            dep.dependent()
+
+    def __init__(self):
+        self.__status = {}
+        self.__lock = threading.RLock()
+        self.__n_queued = 0
+        self.__n_dependents = 0
+        self.__n_updated = 0
+        self.ui_start()
+
+    def __del__(self):
+        self.ui_end()
+
+    def __str__(self):
+        return 'DirStatus{{\n{}\n}}'.format(textwrap.indent('\n'.join(['{} -> {}'.format(d, status) for (d, status) in self.__status.items()]), '  '))
+
+    def get(self, name):
+        with self.__lock:
+            return self.__status[name]
+
+    def debug(self, *args, **kwargs):
+        ui.debug(3, *args, **kwargs)
+
+    def queued(self, d):
+        self.debug('DirStatus: queued({})'.format(d))
+        ++self.__n_queued
+        with self.__lock:
+            assert d not in self.__status or self.__status[d].is_dependent()
+            self.__status[d] = self.Status()
+        self.ui_update()
+
+    def updating(self, d):
+        self.debug('DirStatus: updating({})'.format(d))
+        with self.__lock:
+            self.__status[d].updating()
+        self.ui_update()
+
+    def updated(self, d):
+        self.debug('DirStatus: updated({})'.format(d))
+        ++self.__n_updated
+        with self.__lock:
+            # This status change might need to re-queue other dirs
+            self.__status[d].updated(self)
+        self.ui_update()
+
+    # Returns True if the caller needs to wait for the dependency to be done.
+    # Returns False if the dependency has completed and the parent can keep goind
+    def add_dependent(self, d, task):
+        self.debug('DirStatus: Adding dependent: {} needs {}'.format(task, d))
+        with self.__lock:
+            assert self.__status[task.d].is_updating()
+            if self.__status[d].is_updated():
+                self.debug('DirStatus: {} was already updated. Continuing with {}.'.format(d, task.d))
+                # Done, whomever depends on this can keep going
+                self.ui_update()
+                return False
+
+            # FIXME? What if the dependency hasn't been queued yet?
+            self.debug('DirStatus: add_dependent({}, {})'.format(d, task))
+            assert self.__status[d].is_updating() or self.__status[d].is_queued()
+            self.__status[d].add_dep(self.__status[task.d], task)
+            ++self.__n_dependents
+            self.ui_update()
+            # Needs to wait
+            return True
+
+    def ui_start(self):
+        if not stdout_looks_like_tty():
+            return
+        ui.info('UI start')
+
+    def ui_end(self):
+        if not stdout_looks_like_tty():
+            return
+        ui.info('UI start')
+
+    def ui_update(self):
+        if not stdout_looks_like_tty():
+            return
+        ui.info('UI update. Q: {}, U: {}'.format(self.currently_queued(), self.currently_updating()))
+
+    def currently_queued(self):
+        return [x for x in self.__status if self.get(x).is_queued()]
+
+    def currently_updating(self):
+        return [x for x in self.__status if self.get(x).is_updating()]
+
+
+task_impl = threading.Thread
+queue_impl = queue.PriorityQueue
+
+
+class UpdateTask(object):
+    def __init__(self, d, type):
+        self.d = d
+        self.type = type
+
+    def __repr__(self):
+        return str(self)
+
+    def __str__(self):
+        return 'UpdateTask({}, {})'.format(self.d, self.type.name)
+
+    def __lt__(self, other):
+        # No ordering
+        return 0;
+
+    def run(self):
+        dir_status.updating(self.d)
+        # Just in case. I think we should mostly be exception-less
+        try:
+            return self.type(self.d).update()
+        finally:
+            if not dir_status.get(self.d).is_dependent():
+                dir_status.updated(self.d)
+            else:
+                ui.debug(3, 'Not tagging {} as updated because its status is: {}'.format(self.d, dir_status.get(self.d)))
+
+
+
+# FIXME: Make this more "bad stuff"-proof
+def fix_output(bs):
+    if type(bs) is str:
+        return bs.strip()
+
+    try:
+        return bs.decode('utf-8').strip()
+    except:
+        return bs.strip()
+
+class CommandResult(object):
+    def __init__(self, cmd, output, returncode):
+        self.cmd = cmd
+        self.output = fix_output(output)
+        self.returncode = returncode
+
+    def __repr__(self):
+        return 'CommandResult(cmd={}, output="{}", returncode={})'.format(self.cmd, self.output, self.returncode)
+
+    def __str__(self):
+        out = self.output
+        if self.output == '' and self.is_success():
+            return '$ {}'.format(command_for_printing(self.cmd))
+        return '$ {}\n{}{}'.format(command_for_printing(self.cmd), self.output, '[ret={}]'.format(self.returncode) if self.is_failure() else '')
+
+    def is_success(self):
+        return self.returncode == 0
+
+    def is_failure(self):
+        return not self.is_success()
+
+
+def should_execute(cmd):
+    if not DRY_RUN:
+        return True
+    if cmd[0] != 'git':
+        return False
+    ALWAYS_EXECUTE = ['merge-base', 'diff', 'rev-parse', 'remote']
+    subcmd = cmd[1] if cmd[1] != '-C' else cmd[3]
+    if subcmd in ALWAYS_EXECUTE:
+        return True
+    # Sigh
+    if subcmd == 'for-each-ref':
+        subsubcmd = cmd[2] if cmd[1] != '-C' else cmd[4]
+        if subsubcmd == '--points-at':
+            return True
+    return False
+
+
+def command_for_printing(cmd):
+    # FIXME: quoting
+    return ' '.join(cmd)
+
+
+def invoke_command(cmd, **kwargs):
+    if not should_execute(cmd):
+        ui.info('dry-run: {}'.format(command_for_printing(cmd)))
+        return CommandResult(cmd, '', 0)
+
+    try:
+        if DRY_RUN:
+            ui.debug(2, 'dry-run but exec: {}'.format(command_for_printing(cmd)))
+        ui.debug(2, 'Executing: {}'.format(command_for_printing(cmd)))
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kwargs)
+        stdout, stderr = p.communicate()
+        subprocess.Popen
+        return CommandResult(cmd, fix_output(stdout), p.wait())
+    except subprocess.CalledProcessError as e:
+        return CommandResult(cmd, fix_output(output), e.returncode)
+
+
+class Results(object):
+    def __init__(self):
+        self.__results = []
+
+    def __repr__(self):
+        if len(self.__results) == 0:
+            return 'Results { <empty> }'
+        return 'Results {{\n{}\n}}'.format(textwrap.indent('\n'.join(map(repr, self.__results)), '  '))
+
+    def __str__(self):
+        if len(self.__results) == 0:
+            return 'Results { <empty> }'
+        return '\n'.join(map(str, self.__results))
+
+    def filtered(self, f):
+        res = ''
+        for r in self.__results:
+            if len(res) > 0 and res[-1] != '\n':
+                res += '\n'
+            res += f(r.output.splitlines(False))
+        return res
+
+    def is_failure(self):
+        return len(self.__results) > 0 and self.__results[-1].is_failure()
+
+    def is_success(self):
+        return len(self.__results) == 0 or not self.is_failure()
+
+    def call(self, cmd, **kwargs):
+        result = invoke_command(cmd, **kwargs)
+        self.__results.append(result)
+        return result
+
+    def message(self, description):
+        self.__results.append(CommandResult(['#', scriptname, 'message'], description, 0))
+
+    def fail(self, description):
+        self.__results.append(CommandResult(['#', scriptname, 'failure'], description, 1))
+
+
+class VCS:
+    @classmethod
+    def is_useful_with(c, dirs, files):
+        return c.hidden_dir in dirs
+
+    def dir(self):
+        return self.d
+
+    def skip_file(self):
+        return os.path.join(self.d, '.vcs-skip')
+
+    def should_skip(self):
+        return os.path.exists(self.skip_file())
+
+    def skip_reason(self):
+        with open(self.skip_file(), 'r') as f:
+            return f.read().strip()
+
+    def update(self):
+        if self.should_skip():
+            reason = self.skip_reason()
+            ui.warn('{} {} {}{}'.format(threading.current_thread().name, Colors.skipping(), self.d, ': {}'.format(reason) if reason else ''))
+            return Results()
+        ui.info('{} {} {} ({})'.format(threading.current_thread().name, Colors.updating(), self.d, Colors.vcs(self)))
+        results = self.do_update()
+        return results
+
+    def __str__(self):
+        return self.name
+
+
+class SVN(VCS):
+    name = 'SVN'
+    hidden_dir = '.svn'
+
+    def __init__(self, d):
+        self.d = d
+
+    @classmethod
+    def filter_lines(c, lines):
+        return lines
+
+    def do_update(self):
+        results = Results()
+        results.call('svn', 'update', cwd=self.d)
+        return results
+
+
+class Hg(VCS):
+    name = 'mercurial'
+    hidden_dir = '.hg'
+
+    def __init__(self, d):
+        self.d = d
+
+    @classmethod
+    def filter_lines(c, lines):
+        return lines
+
+    def do_update(self):
+        results = Results()
+        results.call('hg', 'pull', cwd=self.d)
+        return results
+
+
+## Possible states and actions:
+##   Non-clean: Nothing? Eventually maybe make a non-clean => stashed{,-svn}-update?
+##   Clean + has remote: fetch + pull
+##   Clean + no remote + git-svn: git svn rebase => done (no epilogue)
+## Trailing:
+##   Has git-svn: git svn rebase -l (maybe check first that we expect this to work? If it has remote git-svn refs, it should)
+##   Has submodules: update --recursive --init
+class Git(VCS):
+    BARE_DIRS = set(['hooks', 'info', 'objects', 'refs'])
+    BARE_FILES = set(['config', 'description', 'HEAD'])
+    name = 'git'
+    hidden_dir = '.git'
+
+    @classmethod
+    def is_useful_with(c, dirs, files):
+        if c.hidden_dir in dirs:
+            return True
+        # FIXME: Tune this heuristic
+        return not (c.BARE_DIRS.difference(dirs) or c.BARE_FILES.difference(files))
+
+    @classmethod
+    def filter_lines(c, lines):
+        def is_interesting(line):
+            # Default no-op lines + 'Fast-forward' when pulling
+            if line in ['Already up to date.', 'Fast-forward'] or \
+               (line.startswith('Current branch ') and line.endswith(' is up to date.')) or \
+               line.startswith('Checking out files: '):
+                return False
+            # Lines specifying which remote something came from. We usually don't care
+            if line.startswith('From '):
+                return False
+            # File diff stats + create/rename
+            if line.find('|') != -1 or line.startswith(' create mode ') or line.startswith(' rename') or line.startswith(' delete mode'):
+                return False
+
+            # FIXME: Eventually have a "verbose" mode which does let through:
+            #  Maybe the From lines above
+            #  The file changes for when we do rebase the current branch
+            return True
+        return '\n'.join([line for line in lines if is_interesting(line)])
+
+    def __init__(self, d):
+        # Commands in this function aren't counted as results
+        def git(*args):
+            # No need to have a Results() object here, all these commands are idempotent
+            return invoke_command(['git', '-C', self.d] + list(args))
+
+        self.d = d
+        self.__is_bare = not os.path.isdir(os.path.join(d, self.hidden_dir))
+
+        self.__is_dirty = False
+        if not self.__is_bare:
+            if git('diff', '--quiet', '--exit-code').is_failure() or \
+               git('diff', '--quiet', '--exit-code', '--cached').is_failure():
+                self.__is_dirty = True
+
+        res = git('remote')
+        git_remotes = res.output.split()
+        self.__no_remote = len(git_remotes) == 0
+        if not self.__no_remote:
+            self.__remote_urls = []
+            for r in git_remotes:
+                self.__remote_urls.append(git('remote', 'get-url', r).output)
+
+        # Needs the git-svn remote with a specific name
+        self.__has_git_svn = os.path.exists(os.path.join(self.d, git('rev-parse', '--git-dir').output, 'svn/refs/remotes/git-svn/index'))
+        # FIXME: Support submodules (they seem to reset the VT100 support in winpty)
+        self.__has_submodules = False and os.path.exists(os.path.join(self.d, '.gitmodules'))
+
+    def do_update(self):
+        d = self.d
+        results = Results()
+        def git(*args):
+            return results.call(['git', '-C', self.d] + list(args))
+
+        if self.__is_bare:
+            git('fetch')
+            return results
+
+        #if self.__no_remote and self.__has_git_svn:
+        #    return self.update_git_svn_only()
+
+        if self.__no_remote:
+            return results
+        else:
+            have_deps = False
+            for r in self.__remote_urls:
+                if os.path.isdir(r):
+                    # We have a local remote, update it first
+                    if dir_status.add_dependent(os.path.realpath(r), UpdateTask(self.d, type(self))):
+                        # We can return now, we enqueued this updater to run again
+                        have_deps = True
+            # If we enqueued any dependencies, we'll just come back to this later
+            if have_deps:
+                return results
+
+        # Fetch first, then bail out on fetch_only
+        # Stashed update might fetch again, but not much
+        if git('fetch').is_failure() or self.d in fetch_only or os.path.basename(self.d) in fetch_only:
+            return results
+
+        # FIXME: Make it work on dirty repos
+        if self.__is_dirty:
+            # TODO: Don't depend on the existence of custom git commands
+            if git('stash').is_failure():
+                ui.error('{}: git stash failed'.format(d))
+                return results
+
+        # Do our git pull command (ff-only or rebase)
+        # Default pull cmd, for when we can't fast-forward
+        pull_cmd = ['pull', '--rebase']
+        res = git('merge-base', '--is-ancestor', 'HEAD', '@{upstream}')
+        if res.is_success():
+            pull_cmd = ['pull', '--ff-only']
+
+        if git(*pull_cmd).is_failure():
+            # If pull failed, let's not do submodules. Probably no use doing git svn rebase -l either
+            return results
+
+        # If we were dirty and got to here, unstash the stashed changes
+        if self.__is_dirty and git('stash', 'pop').is_failure():
+            ui.error('{}: git stash pop failed'.format(d))
+            return results
+
+        if self.__has_submodules:
+            git('submodule', 'update', '--init', '--recursive')
+            # The above command seems to disable ANSI escapes, as of git for windowd 2.21.0
+            enable_console_ansi_escapes()
+
+        # We can do this even if submodules failed
+        if self.__has_git_svn:
+            git('svn', 'rebase', '-l')
+
+        return results
+
+    def __str__(self):
+        if self.__is_bare:
+            return 'git bare'
+        if self.__has_git_svn:
+            return 'git-svn'
+        return 'git'
+
+
+updaters = [Git, SVN, Hg]
+task_q = queue_impl()
+dir_status = DirStatus()
+
+
+def enqueue_dirs(d, levels, top_dir):
+    for root, dirs, files in os.walk(d):
+        p = os.path.realpath(os.path.join(top_dir, root))
+        if (p in blacklist) or os.path.basename(p) in blacklist:
+            ui.info('{} {} ({})'.format(Colors.skipping(), p, Colors.blacklisted()))
+            dirs[:] = []
+            continue
+
+        updater = None
+        stop = False
+        for u in updaters:
+            if not u.is_useful_with(dirs, files):
+                continue
+
+            task = UpdateTask(p, u)
+            ui.debug(1, 'Enqueuing {}'.format(task))
+            task_q.put((REGULAR_PRIORITY, task))
+            dir_status.queued(p)
+            stop = True
+            break
+
+        if p.count(os.path.sep) > LEVELS_TO_SEARCH:
+            stop = True
+
+        if stop:
+            dirs[:] = []
+
+
+def thread_func(results, index):
+    erroneous = []
+    ok = []
+    while True:
+        priority, task = task_q.get()
+        if task is None:
+            ui.debug(3, 'Exiting thread. TaskQ size: {}'.format(task_q.qsize()))
+            ui.debug(5, dir_status)
+            task_q.task_done()
+            break
+
+        try:
+            ui.debug(1, 'Running task: {}'.format(task))
+            res = task.run()
+            if res.is_failure():
+                erroneous.append((task.d, res))
+            else:
+                filtered = res.filtered(task.type.filter_lines)
+                ok.append((task.d, res))
+                if dir_status.get(task.d).is_updated():
+                    report_str = '{} in {}'.format(Colors.updated(), task.d)
+                    filtered = res.filtered(task.type.filter_lines)
+                    if filtered:
+                        report_str += '\n{}'.format(filtered)
+                    ui.info(report_str)
+        except Exception as e:
+            ui.error('Unknown error when updating {}: {}'.format(task.d, repr(e)))
+            ui.error(traceback.format_exc())
+            erroneous.append((task.d, (e, traceback.format_exc())))
+        finally:
+            ui.debug(3, 'task_done: {}. TaskQ size: {}'.format(task.d, task_q.qsize()))
+            ui.debug(5, dir_status)
+            task_q.task_done()
+
+    results[index] = (ok, erroneous)
+
+
+def main():
+    # FIXME: argparse
+    if len(sys.argv) == 2:
+        if os.path.isdir(sys.argv[1]):
+            top_dir = os.path.realpath(sys.argv[1])
+        else:
+            usage()
+    else:
+        top_dir = os.getcwd()
+
+    ui.info('Updating from {} at a maxdepth of {}, with {} threads'.format(top_dir, LEVELS_TO_SEARCH, THREADS))
+
+    q_thread = task_impl(target=enqueue_dirs, args=[top_dir, LEVELS_TO_SEARCH, top_dir])
+    q_thread.start()
+
+    # Pre-allocate enough elements for all threads
+    thread_results = [[]]*THREADS
+    threads = []
+    for i in range(0, THREADS):
+        thread_results[i] = []
+        t = task_impl(target=thread_func, name='T{}'.format(i), args=[thread_results, i])
+        threads.append(t)
+        t.start()
+
+    ui.info('All directories have been queued, waiting for the queue to be done')
+    q_thread.join()
+    for i in range(0, THREADS):
+        # Signal threads that everything has been queued
+        task_q.put((VERY_LOW_PRIORITY, None))
+
+    for i in range(0, THREADS):
+        threads[i].join()
+    task_q.join()
+
+    ok, failed = reduce((lambda x1, x2: (x1[0] + x2[0], x1[1] + x2[1])), thread_results)
+    n = len(ok) + len(failed)
+    ui.info('Finished updating {} repositories'.format(n))
+
+    if DEBUG_LEVEL >= 2:
+        ui.debug(2, 'Successful directories:')
+        for d, results in ok:
+            ui.debug(2, 'In {}:\n{}\n'.format(Colors.ok(d), repr(results)))
+    if failed:
+        n_errors = len(failed)
+        ui.error(start='')  # Newline in whatever fd error() prints to
+        ui.error('Failure{} in {} directories:'.format('' if n_errors == 1 else 's', n_errors))
+        show = repr if DEBUG_LEVEL >= 2 else str
+        for d, results in failed:
+            ui.error('In {}:\n{}\n'.format(Colors.error(d), show(results)))
+
+
+if __name__ == '__main__':
+    main()
