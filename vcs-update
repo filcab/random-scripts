@@ -1,12 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from __future__ import print_function
 import os
 import subprocess
 import sys
 import threading
-
-
-from pprint import pprint
 
 
 # TODO: Make this configurable. Levels of dirs to descend
@@ -71,8 +68,7 @@ class LockedValue(object):
 
 
 ###
-
-
+# Runs a single command
 class Executor(object):
     DEBUG = False
 
@@ -175,7 +171,7 @@ class Git(VCS):
             self.git("diff", "--quiet", "--exit-code")
             self.git("diff", "--quiet", "--exit-code", "--cached")
             self.dirty = False
-        except:
+        except e:  # noqa
             self.dirty = True
 
     # Safe to call in constructor, *after* setting self.d
@@ -190,8 +186,6 @@ class Git(VCS):
         if self.__no_remote:
             return True
 
-        d = self.d
-
         def can_fast_forward():
             # Symbolic name for upstream for the current branch
             upstream = self.git_stdout(
@@ -201,7 +195,7 @@ class Git(VCS):
             try:
                 self.git("merge-base", "--is-ancestor", "HEAD", upstream)
                 return True
-            except:
+            except:  # noqa
                 return False
 
         if self.__has_git_svn:
@@ -359,7 +353,7 @@ def main():
 
     results = [[]] * THREADS
     threads = []
-    for i in xrange(0, THREADS):
+    for i in range(0, THREADS):
         results[i] = []
         t = task_impl(target=thread_func, args=[q, results, i])
         threads.append(t)
@@ -367,11 +361,11 @@ def main():
 
     q_thread.join()
     info("All directories have been queued")
-    for i in xrange(0, THREADS):
+    for i in range(0, THREADS):
         # Signal threads that everything has been queued
         q.put(None)
 
-    for i in xrange(0, THREADS):
+    for i in range(0, THREADS):
         threads[i].join()
     q.join()
 
