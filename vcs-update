@@ -363,7 +363,7 @@ def main():
                 for (d, e) in erroneous:
                     described_error = ''
                     if e:
-                        described_error = 'Return code: {}\nCommand: {}\nOutput:{}\n'.format(e.returncode, ' '.join(e.cmd), ' None' if e.output is None else '\n{}'.format(e.output))
+                        described_error = ': Return code: {}\nCommand: {}\nOutput:{}\n'.format(e.returncode, ' '.join(e.cmd), ' None' if e.output is None else '\n{}'.format(e.output))
                     error('{}{}'.format(d, described_error))
 
 
