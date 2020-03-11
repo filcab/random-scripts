@@ -86,7 +86,7 @@ class Executor(object):
     def call(self, **kwargs):
         self.__log("call: executing: {}".format(" ".join(self.cmd())))
         (_, ret) = self.__execute(**kwargs)
-        self.__log("call: return: {}".format(e.returncode))
+        self.__log("call: return: {}".format(ret))
         return ret
 
     def check_call(self, **kwargs):
@@ -116,7 +116,8 @@ class Executor(object):
             )
             (stdout, stderr) = p.communicate()
             assert not stderr
-            return (stdout, p.wait())
+            stdout = b"" if stdout is None else stdout
+            return (stdout.decode("utf-8"), p.wait())
 
         if with_output:
             return execute(self.cmd(), subprocess.PIPE)
@@ -171,7 +172,7 @@ class Git(VCS):
             self.git("diff", "--quiet", "--exit-code")
             self.git("diff", "--quiet", "--exit-code", "--cached")
             self.dirty = False
-        except e:  # noqa
+        except subprocess.CalledProcessError:
             self.dirty = True
 
     # Safe to call in constructor, *after* setting self.d
@@ -195,7 +196,7 @@ class Git(VCS):
             try:
                 self.git("merge-base", "--is-ancestor", "HEAD", upstream)
                 return True
-            except:  # noqa
+            except subprocess.CalledProcessError:
                 return False
 
         if self.__has_git_svn:
