@@ -22,6 +22,7 @@ except ImportError:
 LEVELS_TO_SEARCH = 7
 THREADS = 8
 DRY_RUN = False
+PRINT_QUEUES = False
 blacklist = []
 fetch_only = []
 # Priorities for our task queue. We need to guarantee that we don't get the threads to exit before everything is done
@@ -277,12 +278,14 @@ class DirStatus(object):
     def ui_end(self):
         if not stdout_looks_like_tty():
             return
-        ui.info('UI start')
+        ui.info('UI end')
 
     def ui_update(self):
         if not stdout_looks_like_tty():
             return
-        ui.info('UI update. Q: {}, U: {}'.format(self.currently_queued(), self.currently_updating()))
+        if PRINT_QUEUES:
+            ui.info('UI update. Q: {}'.format(self.currently_queued()))
+            ui.info('           U: {}'.format(self.currently_updating()))
 
     def currently_queued(self):
         return [x for x in self.__status if self.get(x).is_queued()]
