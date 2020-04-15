@@ -525,9 +525,15 @@ class Git(VCS):
     @classmethod
     def filter_lines(c, lines):
         def is_interesting(line):
-            # Default no-op lines + 'Fast-forward' when pulling
-            if line in ['Already up to date.', 'Fast-forward'] or \
+            # Filtered:
+            # - Empty lines
+            # - Default no-op lines
+            # - 'Fast-forward' when pulling
+            # - Stash pop
+            # - Suggestions to use add or checkout
+            if line in ['', 'Already up to date.', 'Fast-forward', 'no changes added to commit (use "git add" and/or "git commit -a")'] or \
                (line.startswith('Current branch ') and line.endswith(' is up to date.')) or \
+               (line.startswith('  (use "git ') and line.endswith(')')) or \
                line.startswith('Checking out files: '):
                 return False
             # Lines specifying which remote something came from. We usually don't care
