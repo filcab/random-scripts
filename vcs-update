@@ -5,6 +5,23 @@ import subprocess
 import sys
 import threading
 
+# Have a few heuristics for winpty.
+# A look at `env` vs `winpty env` showed winpty with TERM=cygwin (straight from MinTTY for git-bash we had xterm-256color) and winpty adding the .exe to SHELL
+# TERM might be set late
+looks_like_winpty = False
+if sys.platform == 'win32' and ('TERM' not in os.environ or os.environ['TERM'] == 'cygwin') and ('SHELL' in os.environ and os.environ['SHELL'].endswith('.exe')):
+    looks_like_winpty = True
+    # From https://stackoverflow.com/questions/36760127/how-to-use-the-new-support-for-ansi-escape-sequences-in-the-windows-10-console
+    # Went with the shorter amount of code, as this doesn't need to be foolproof
+    import ctypes
+    def enable_console_ansi_escapes():
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    enable_console_ansi_escapes()
+else:
+    def enable_console_ansi_escapes():
+        pass
+
 
 # TODO: Make this configurable. Levels of dirs to descend
 LEVELS_TO_SEARCH = 5
