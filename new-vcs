@@ -610,11 +610,12 @@ class Git(VCS):
             return results
 
         # FIXME: Make it work on dirty repos
-        if self.__is_dirty:
-            # TODO: Don't depend on the existence of custom git commands
-            if git('stash').is_failure():
-                ui.error('{}: git stash failed'.format(d))
-                return results
+        # Just set autostash??
+        #if self.__is_dirty:
+        #    # TODO: Don't depend on the existence of custom git commands
+        #    if git('stash').is_failure():
+        #        ui.error('{}: git stash failed'.format(d))
+        #        return results
 
         # Do our git pull command (ff-only or rebase)
         # Default pull cmd, for when we can't fast-forward
@@ -628,9 +629,10 @@ class Git(VCS):
             return results
 
         # If we were dirty and got to here, unstash the stashed changes
-        if self.__is_dirty and git('stash', 'pop').is_failure():
-            ui.error('{}: git stash pop failed'.format(d))
-            return results
+        # Just use autostash?
+        #if self.__is_dirty and git('stash', 'pop').is_failure():
+        #    ui.error('{}: git stash pop failed'.format(d))
+        #    return results
 
         if self.__has_submodules:
             git('submodule', 'update', '--init', '--recursive')
