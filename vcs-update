@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+
 from __future__ import print_function
+from pathlib import Path
 import os
 import subprocess
 import sys
@@ -372,7 +374,8 @@ class Git(VCS):
         #    return self.update_git_svn_only()
 
         result = results.null()
-        if self.__no_remote:
+        # Don't log anything, as we don't know anything about this dir
+        if self.__no_remote and not self.__has_git_svn:
             return result
         else:
             have_deps = False
@@ -393,14 +396,36 @@ class Git(VCS):
             # Symbolic name for upstream for the current branch
             upstream = self.git_stdout('rev-parse', '--symbolic-full-name', '--abbrev-ref', '@{upstream}').output.rstrip()
             # Turn shell return code into a Python bool (opposite meaning for 0 and non-zero)
-            return self.git('merge-base', '--is-ancestor', 'HEAD', upstream)
+            try:
+                self.git("merge-base", "--is-ancestor", "HEAD", upstream)
+                return True
+            except subprocess.CalledProcessError:
+                return False
 
-        # Fetch first, then bail out on fetch_only
-        # Stashed update might fetch again, but not much
-        fetch = ['fetch']
-        result = self.git(*fetch)
-        if self.d in fetch_only or os.path.basename(self.d) in fetch_only:
-            return result
+        if self.__has_git_svn:
+            print('directory: {}'.format(self.d), file=log)
+            print('svn: {}'.format(
+                    self.git_stdout('config', '--get', 'svn-remote.svn.url').strip()),
+                    file=log)
+
+            if self.dirty:
+                self.git("stashed-svn-update")
+                return True
+
+            cmd = ["svn", "fetch"]
+        else:
+            print('directory: {}'.format(self.d), file=log)
+            print(self.git_stdout('remote', '-v').strip(), file=log)
+            # Fetch first, then bail out on fetch_only
+            # Stashed update might fetch again, but not much
+            fetch = ["fetch"]
+            self.git(*fetch)
+            if self.d in fetch_only or os.path.basename(self.d) in fetch_only:
+                return
+
+            if self.dirty:
+                self.git("stashed-update")
+                return True
 
         try:
             if can_fast_forward():
@@ -516,7 +541,7 @@ def enqueue_dirs(d, levels, top_dir):
     return task_q
 
 
-def thread_func(results, index):
+def thread_func(task_q, log, results, index):
     erroneous = []
     while True:
         updater = task_q.get()
@@ -525,12 +550,11 @@ def thread_func(results, index):
             break
 
         try:
-            results = updater.update(index)
-            if resuts.is_failure():
-                erroneous.append((updater.dir(), results))
-        except Exception as e:
-            print('Unknown error: {}'.format(repr(e)))
-            print(traceback.print_exc())
+            if not updater.update(index, log):
+                erroneous.append((updater.dir(), None))
+        except subprocess.CalledProcessError as e:
+            # TODO: Get details?
+            erroneous.append((updater.dir(), e))
         finally:
             task_q.task_done()
     results[index] = erroneous
@@ -542,22 +566,25 @@ def main():
     global top_dir
     if len(sys.argv) == 2:
         if os.path.isdir(sys.argv[1]):
-            top_dir = os.path.realpath(sys.argv[1])
+            top_dir = Path(os.path.realpath(sys.argv[1]))
         else:
             usage()
     else:
-        top_dir = os.getcwd()
+        top_dir = Path(os.getcwd())
 
     info("Updating from {} at a maxdepth of {}".format(top_dir, LEVELS_TO_SEARCH))
 
-    q_thread = task_impl(target=enqueue_dirs, args=[top_dir, LEVELS_TO_SEARCH, top_dir])
+    log = open(top_dir/"vcs-update.log", 'w')
+    q_thread = task_impl(
+        target=enqueue_dirs, args=[task_q, top_dir, LEVELS_TO_SEARCH, top_dir]
+    )
     q_thread.start()
 
     results = [[]] * THREADS
     threads = []
     for i in range(0, THREADS):
         results[i] = []
-        t = task_impl(target=thread_func, args=[results, i])
+        t = task_impl(target=thread_func, args=[task_q, log, results, i])
         threads.append(t)
         t.start()
 
