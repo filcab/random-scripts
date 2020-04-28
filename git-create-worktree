@@ -1,0 +1,22 @@
+#!/bin/sh
+
+set -e
+
+if [ $# -lt 1 ]; then
+  echo >&2 usage: $0 worktree [branch]
+  exit 1
+fi
+
+worktree="$1"
+commitish="$2"
+if [ -z "$commitish" ]; then
+  commitish=HEAD
+fi
+
+git worktree add "$worktree" --no-checkout "$commitish"
+git -C "$worktree" config core.sparseCheckout true
+echo Editing sparse-checkout file
+sparse_checkout_file=$(git -C "$worktree" rev-parse --git-path info/sparse-checkout)
+mkdir "$(basename "$sparse_checkout_file")"
+vim "$sparse_checkout_file"
+git -C "$worktree" read-tree -mu "$commitish"
